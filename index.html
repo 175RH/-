@@ -13,7 +13,7 @@
     th { background: #f6f6f6; }
     .muted { color:#666; font-size:13px; margin-top:8px; }
 
-    /* ✅ 같은 시간 칸에 2개 이상 들어오면 셀 배경 강조 */
+    /* 같은 시간 칸에 2개 이상 들어오면 셀 배경 강조 */
     td.multi { background: #e7f3ff; }
 
     @media print {
@@ -21,8 +21,7 @@
       body { margin:0; }
       @page { size: A4 portrait; margin: 10mm; }
       table { font-size: 12px; }
-      /* 인쇄에서도 강조가 보이도록 유지 */
-      td.multi { background: #fff2cc !important; }
+      td.multi { background: #e7f3ff !important; }
     }
   </style>
 </head>
@@ -51,6 +50,7 @@
   const periods = [1,2,3,4,5,6,7];
 
   let mode = "class";
+  let isRefreshing = false;
 
   const picker = document.getElementById("picker");
   const titleEl = document.getElementById("title");
@@ -60,7 +60,9 @@
 
   document.getElementById("modeClass").onclick = () => setMode("class");
   document.getElementById("modeTeacher").onclick = () => setMode("teacher");
-  document.getElementById("reload").onclick = () => load();
+
+  // ✅ 새로고침 버튼을 눌렀을 때만 "데이터 재호출"
+  document.getElementById("reload").onclick = () => refreshCurrent();
 
   async function api(qs) {
     try {
@@ -79,10 +81,19 @@
   function setMode(m) {
     mode = m;
     pickLabel.textContent = (mode === "class") ? "학급 선택" : "교사 선택";
-    load();
+    // ✅ 모드 변경은 화면이 바뀌는 '명령'이므로 갱신
+    refreshListAndTable();
   }
 
-  async function load() {
+  // ✅ 선택 변경도 화면이 바뀌는 '명령'이므로 갱신
+  picker.onchange = () => refreshCurrent();
+
+  function getTodayKey() {
+    const map = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+    return map[new Date().getDay()];
+  }
+
+  async function refreshListAndTable() {
     tableWrap.innerHTML = "";
     titleEl.textContent = "";
     metaEl.textContent = "불러오는 중";
@@ -102,64 +113,64 @@
     await loadTable(chosen);
   }
 
-  picker.onchange = () => loadTable(picker.value);
-
-  function getTodayKey() {
-    const map = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-    return map[new Date().getDay()];
+  async function refreshCurrent() {
+    const v = picker.value;
+    if (!v) return;
+    await loadTable(v);
   }
 
   async function loadTable(name) {
-    tableWrap.innerHTML = "";
+    if (isRefreshing) return;
+    isRefreshing = true;
+
     titleEl.textContent = (mode === "class") ? `학급 시간표 ${name}` : `교사 시간표 ${name}`;
     metaEl.textContent = "불러오는 중";
 
-    const res = await api(`?view=${mode}&name=${encodeURIComponent(name)}`);
-    const records = res.data || [];
+    try {
+      const res = await api(`?view=${mode}&name=${encodeURIComponent(name)}`);
+      const records = res.data || [];
 
-    // ✅ 같은 요일/교시 칸에 여러 건 누적
-    const map = new Map();
-    for (const r of records) {
-      const key = `${r.day}_${r.period}`;
+      const map = new Map();
+      for (const r of records) {
+        const key = `${r.day}_${r.period}`;
+        const cell = (mode === "class")
+          ? `${r.subject}\n${r.teacher}`
+          : `${r.subject}\n${r.class}`;
 
-      const cell = (mode === "class")
-        ? `${r.subject}\n${r.teacher}`
-        : `${r.subject}\n${r.class}`;
-
-      if (!map.has(key)) map.set(key, []);
-      map.get(key).push(cell);
-    }
-
-    const today = getTodayKey();
-
-    let html = "<table><thead><tr><th>교시</th>";
-    for (const d of days) {
-      const style = (d === today) ? ' style="background:#ffeeba"' : '';
-      html += `<th${style}>${dayLabel[d]}</th>`;
-    }
-    html += "</tr></thead><tbody>";
-
-    for (const p of periods) {
-      html += `<tr><th>${p}</th>`;
-      for (const d of days) {
-        const arr = map.get(`${d}_${p}`) || [];
-
-        // ✅ 2개 이상이면 다른색(클래스 부여)
-        const tdClass = (arr.length >= 2) ? "multi" : "";
-
-        const cellHtml = arr
-          .map(s => esc(s).replaceAll("\n","<br>"))
-          .join("<hr style='border:0;border-top:1px solid #ddd;margin:6px 0'>");
-
-        html += `<td class="${tdClass}">${cellHtml}</td>`;
+        if (!map.has(key)) map.set(key, []);
+        map.get(key).push(cell);
       }
-      html += "</tr>";
+
+      const today = getTodayKey();
+
+      let html = "<table><thead><tr><th>교시</th>";
+      for (const d of days) {
+        const style = (d === today) ? ' style="background:#ffeeba"' : '';
+        html += `<th${style}>${dayLabel[d]}</th>`;
+      }
+      html += "</tr></thead><tbody>";
+
+      for (const p of periods) {
+        html += `<tr><th>${p}</th>`;
+        for (const d of days) {
+          const arr = map.get(`${d}_${p}`) || [];
+          const tdClass = (arr.length >= 2) ? "multi" : "";
+          const cellHtml = arr
+            .map(s => esc(s).replaceAll("\n","<br>"))
+            .join("<hr style='border:0;border-top:1px solid #ddd;margin:6px 0'>");
+
+          html += `<td class="${tdClass}">${cellHtml}</td>`;
+        }
+        html += "</tr>";
+      }
+
+      html += "</tbody></table>";
+      tableWrap.innerHTML = html;
+
+      metaEl.textContent = `총 ${records.length}개 수업 반영 | 마지막 갱신 ${new Date().toLocaleString()}`;
+    } finally {
+      isRefreshing = false;
     }
-
-    html += "</tbody></table>";
-    tableWrap.innerHTML = html;
-
-    metaEl.textContent = `총 ${records.length}개 수업 반영 | 마지막 갱신 ${new Date().toLocaleString()}`;
   }
 
   function esc(s) {
@@ -171,8 +182,8 @@
       .replaceAll("'","&#039;");
   }
 
-  setMode("class");
-  setInterval(() => loadTable(picker.value), 30000);
+  // ✅ 최초 1회만 로드, 이후는 사용자 동작(새로고침/선택 변경/모드 변경) 때만 갱신
+  refreshListAndTable();
 </script>
 </body>
 </html>
