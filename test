@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>시간표</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 16px; }
+    .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+    select, button { padding: 8px 10px; }
+    table { border-collapse: collapse; width: 100%; margin-top: 12px; }
+    th, td { border: 1px solid #ddd; padding: 8px; text-align: center; }
+    th { background: #f6f6f6; }
+    .muted { color:#666; font-size:13px; margin-top:8px; }
+    @media print { .no-print { display:none !important; } body { margin:0; } }
+  </style>
+</head>
+<body>
+  <div class="row no-print">
+    <button id="modeClass">학급용</button>
+    <button id="modeTeacher">교사용</button>
+    <button onclick="window.print()">인쇄</button>
+  </div>
+
+  <div class="row no-print" style="margin-top:10px">
+    <label id="pickLabel">학급 선택</label>
+    <select id="picker"></select>
+    <button id="reload">새로고침</button>
+  </div>
+
+  <div id="title" style="margin-top:14px; font-weight:700; font-size:18px"></div>
+  <div class="muted" id="meta"></div>
+  <div id="tableWrap"></div>
+
+<script>
+  const API_BASE = "여기에_너의_웹앱_exec_URL";
+
+  const days = ["Mon","Tue","Wed","Thu","Fri"];
+  const dayLabel = { Mon:"월", Tue:"화", Wed:"수", Thu:"목", Fri:"금" };
+  const periods = [1,2,3,4,5,6,7];
+
+  let mode = "class";
+
+  const picker = document.getElementById("picker");
+  const titleEl = document.getElementById("title");
+  const metaEl = document.getElementById("meta");
+  const tableWrap = document.getElementById("tableWrap");
+  const pickLabel = document.getElementById("pickLabel");
+
+  document.getElementById("modeClass").onclick = () => setMode("class");
+  document.getElementById("modeTeacher").onclick = () => setMode("teacher");
+  document.getElementById("reload").onclick = () => load();
+
+  async function api(qs) {
+    const res = await fetch(`${API_BASE}${qs}`);
+    return res.json();
+  }
+
+  function setMode(m) {
+    mode = m;
+    pickLabel.textContent = (mode === "class") ? "학급 선택" : "교사 선택";
+    load();
+  }
+
+  async function load() {
+    tableWrap.innerHTML = "";
+    titleEl.textContent = "";
+    metaEl.textContent = "불러오는 중";
+
+    const list = (mode === "class")
+      ? await api("?view=classes")
+      : await api("?view=teachers");
+
+    const items = (mode === "class") ? list.classes : list.teachers;
+    picker.innerHTML = items.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join("");
+
+    const chosen = picker.value || items[0];
+    await loadTable(chosen);
+  }
+
+  picker.onchange = () => loadTable(picker.value);
+
+  async function loadTable(name) {
+    tableWrap.innerHTML = "";
+    titleEl.textContent = (mode === "class") ? `학급 시간표 ${name}` : `교사 시간표 ${name}`;
+    metaEl.textContent = "불러오는 중";
+
+    const res = await api(`?view=${mode}&name=${encodeURIComponent(name)}`);
+    const records = res.data || [];
+
+    const map = new Map();
+    for (const r of records) {
+      const key = `${r.day}_${r.period}`;
+      const cell = (mode === "class")
+        ? `${r.subject}\n${r.teacher}`
+        : `${r.subject}\n${r.class}`;
+      map.set(key, cell);
+    }
+
+    let html = "<table><thead><tr><th>교시</th>";
+    for (const d of days) html += `<th>${dayLabel[d]}</th>`;
+    html += "</tr></thead><tbody>";
+
+    for (const p of periods) {
+      html += `<tr><th>${p}</th>`;
+      for (const d of days) {
+        const cell = map.get(`${d}_${p}`) || "";
+        html += `<td>${esc(cell).replaceAll("\n","<br>")}</td>`;
+      }
+      html += "</tr>";
+    }
+
+    html += "</tbody></table>";
+    tableWrap.innerHTML = html;
+    metaEl.textContent = `총 ${records.length}개 수업 반영 | 마지막 갱신 ${new Date().toLocaleString()}`;
+  }
+
+  function esc(s) {
+    return String(s ?? "")
+      .replaceAll("&","&amp;")
+      .replaceAll("<","&lt;")
+      .replaceAll(">","&gt;")
+      .replaceAll('"',"&quot;")
+      .replaceAll("'","&#039;");
+  }
+
+  setMode("class");
+  setInterval(() => loadTable(picker.value), 30000);
+</script>
+</body>
+</html>
