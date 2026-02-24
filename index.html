@@ -88,14 +88,17 @@
     const res = await api(`?view=${mode}&name=${encodeURIComponent(name)}`);
     const records = res.data || [];
 
-    const map = new Map();
-    for (const r of records) {
-      const key = `${r.day}_${r.period}`;
-      const cell = (mode === "class")
-        ? `${r.subject}\n${r.teacher}`
-        : `${r.subject}\n${r.class}`;
-      map.set(key, cell);
-    }
+const map = new Map();
+for (const r of records) {
+  const key = `${r.day}_${r.period}`;
+
+  const cell = (mode === "class")
+    ? `${r.subject}\n${r.teacher}`
+    : `${r.subject}\n${r.class}`;
+
+  if (!map.has(key)) map.set(key, []);
+  map.get(key).push(cell);
+}
 
     let html = "<table><thead><tr><th>교시</th>";
     for (const d of days) html += `<th>${dayLabel[d]}</th>`;
@@ -104,8 +107,12 @@
     for (const p of periods) {
       html += `<tr><th>${p}</th>`;
       for (const d of days) {
-        const cell = map.get(`${d}_${p}`) || "";
-        html += `<td>${esc(cell).replaceAll("\n","<br>")}</td>`;
+const arr = map.get(`${d}_${p}`) || [];
+const cellHtml = arr
+  .map(s => esc(s).replaceAll("\n","<br>"))
+  .join("<hr style='border:0;border-top:1px solid #ddd;margin:6px 0'>");
+
+html += `<td>${cellHtml}</td>`;
       }
       html += "</tr>";
     }
