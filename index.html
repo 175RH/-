@@ -43,6 +43,7 @@
   <div id="tableWrap"></div>
 
 <script>
+  // Apps Script 웹앱 /exec 주소
   const API_BASE = "https://script.google.com/macros/s/AKfycbxue8gkY89M_4N2DTWVwYH0M1oqcjUPgNlAOinUL1gEz6VMtrQT8Iq188zYUtggLpHzjg/exec";
 
   const days = ["Mon","Tue","Wed","Thu","Fri"];
@@ -60,9 +61,8 @@
 
   document.getElementById("modeClass").onclick = () => setMode("class");
   document.getElementById("modeTeacher").onclick = () => setMode("teacher");
-
-  // ✅ 새로고침 버튼을 눌렀을 때만 "데이터 재호출"
   document.getElementById("reload").onclick = () => refreshCurrent();
+  picker.onchange = () => refreshCurrent();
 
   async function api(qs) {
     try {
@@ -81,12 +81,8 @@
   function setMode(m) {
     mode = m;
     pickLabel.textContent = (mode === "class") ? "학급 선택" : "교사 선택";
-    // ✅ 모드 변경은 화면이 바뀌는 '명령'이므로 갱신
     refreshListAndTable();
   }
-
-  // ✅ 선택 변경도 화면이 바뀌는 '명령'이므로 갱신
-  picker.onchange = () => refreshCurrent();
 
   function getTodayKey() {
     const map = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
@@ -130,21 +126,23 @@
       const res = await api(`?view=${mode}&name=${encodeURIComponent(name)}`);
       const records = res.data || [];
 
+      // 같은 요일/교시 칸에 여러 건 누적
       const map = new Map();
       for (const r of records) {
         const key = `${r.day}_${r.period}`;
-        const cell = (mode === "class")
+
+        const text = (mode === "class")
           ? `${r.subject}\n${r.teacher}`
           : `${r.subject}\n${r.class}`;
 
-        // ⭐ 교과가 '합반'이면 빨강 처리
-        const isMerged = String(r.subject).trim() === "합반";
+        // ✅ 교과가 '합반'이면 해당 항목만 빨강
+        const isMerged = String(r.subject || "").trim() === "합반";
         const color = isMerged ? "#d93025" : "#000000";
 
-        const cell = { text, color };
+        const cellObj = { text, color };
 
         if (!map.has(key)) map.set(key, []);
-        map.get(key).push(cell);
+        map.get(key).push(cellObj);
       }
 
       const today = getTodayKey();
@@ -160,9 +158,15 @@
         html += `<tr><th>${p}</th>`;
         for (const d of days) {
           const arr = map.get(`${d}_${p}`) || [];
+
+          // 2개 이상이면 다른색(배경 강조)
           const tdClass = (arr.length >= 2) ? "multi" : "";
+
           const cellHtml = arr
-            .map(s => esc(s).replaceAll("\n","<br>"))
+            .map(obj => {
+              const safe = esc(obj.text).replaceAll("\n","<br>");
+              return `<div style="color:${obj.color}">${safe}</div>`;
+            })
             .join("<hr style='border:0;border-top:1px solid #ddd;margin:6px 0'>");
 
           html += `<td class="${tdClass}">${cellHtml}</td>`;
@@ -188,7 +192,7 @@
       .replaceAll("'","&#039;");
   }
 
-  // ✅ 최초 1회만 로드, 이후는 사용자 동작(새로고침/선택 변경/모드 변경) 때만 갱신
+  // 최초 1회 로드 이후는 사용자 동작(버튼/선택 변경) 때만 갱신
   refreshListAndTable();
 </script>
 </body>
