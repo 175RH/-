@@ -137,6 +137,12 @@
           ? `${r.subject}\n${r.teacher}`
           : `${r.subject}\n${r.class}`;
 
+        // ⭐ 교과가 '합반'이면 빨강 처리
+        const isMerged = String(r.subject).trim() === "합반";
+        const color = isMerged ? "#d93025" : "#000000";
+
+        const cell = { text, color };
+
         if (!map.has(key)) map.set(key, []);
         map.get(key).push(cell);
       }
