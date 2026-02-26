@@ -16,6 +16,9 @@
     /* 같은 시간 칸에 2개 이상 들어오면 셀 배경 강조 */
     td.multi { background: #e7f3ff; }
 
+    /* 분반 표시 */
+    .split-tag { font-size: 11px; color: #666; margin-bottom: 6px; }
+
     @media print {
       .no-print { display:none !important; }
       body { margin:0; }
@@ -43,7 +46,6 @@
   <div id="tableWrap"></div>
 
 <script>
-  // Apps Script 웹앱 /exec 주소
   const API_BASE = "https://script.google.com/macros/s/AKfycbxue8gkY89M_4N2DTWVwYH0M1oqcjUPgNlAOinUL1gEz6VMtrQT8Iq188zYUtggLpHzjg/exec";
 
   const days = ["Mon","Tue","Wed","Thu","Fri"];
@@ -135,11 +137,11 @@
           ? `${r.subject}\n${r.teacher}`
           : `${r.subject}\n${r.class}`;
 
-        // ✅ 교과가 '합반'이면 해당 항목만 빨강
+        // 합반이면 글자 빨강
         const isMerged = String(r.subject || "").trim() === "합반";
         const color = isMerged ? "#d93025" : "#000000";
 
-        const cellObj = { text, color };
+        const cellObj = { text, color, className: String(r.class || "").trim() };
 
         if (!map.has(key)) map.set(key, []);
         map.get(key).push(cellObj);
@@ -159,10 +161,25 @@
         for (const d of days) {
           const arr = map.get(`${d}_${p}`) || [];
 
-          // 2개 이상이면 다른색(배경 강조)
+          // 배경 강조는 "한 칸에 여러 건"일 때
           const tdClass = (arr.length >= 2) ? "multi" : "";
 
-          const cellHtml = arr
+          // ✅ 분반 표시 조건
+          // - 학급용: 어차피 같은 학급 화면이므로 arr가 2개 이상이면 분반
+          // - 교사용: 같은 칸에 동일 학급이 2번 이상이면 분반
+          let isSplit = false;
+
+          if (mode === "class") {
+            isSplit = arr.length >= 2;
+          } else {
+            const classes = arr.map(x => x.className).filter(Boolean);
+            const uniq = new Set(classes);
+            isSplit = (classes.length >= 2) && (uniq.size < classes.length);
+          }
+
+          const splitTag = isSplit ? `<div class="split-tag">분반</div>` : "";
+
+          const cellHtml = splitTag + arr
             .map(obj => {
               const safe = esc(obj.text).replaceAll("\n","<br>");
               return `<div style="color:${obj.color}">${safe}</div>`;
@@ -192,7 +209,6 @@
       .replaceAll("'","&#039;");
   }
 
-  // 최초 1회 로드 이후는 사용자 동작(버튼/선택 변경) 때만 갱신
   refreshListAndTable();
 </script>
 </body>
