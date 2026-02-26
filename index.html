@@ -13,10 +13,7 @@
     th { background: #f6f6f6; }
     .muted { color:#666; font-size:13px; margin-top:8px; }
 
-    /* 같은 시간 칸에 2개 이상 들어오면 셀 배경 강조 */
     td.multi { background: #e7f3ff; }
-
-    /* 분반 표시 */
     .split-tag { font-size: 11px; color: #666; margin-bottom: 6px; }
 
     @media print {
@@ -46,7 +43,7 @@
   <div id="tableWrap"></div>
 
 <script>
-  const API_BASE = "https://script.google.com/macros/s/AKfycbxue8gkY89M_4N2DTWVwYH0M1oqcjUPgNlAOinUL1gEz6VMtrQT8Iq188zYUtggLpHzjg/exec";
+  const API_BASE = "여기에_너의_웹앱_exec_URL";
 
   const days = ["Mon","Tue","Wed","Thu","Fri"];
   const dayLabel = { Mon:"월", Tue:"화", Wed:"수", Thu:"목", Fri:"금" };
@@ -67,28 +64,18 @@
   picker.onchange = () => refreshCurrent();
 
   async function api(qs) {
-    try {
-      const url = `${API_BASE}${qs}`;
-      const res = await fetch(url);
-      const text = await res.text();
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      if (text.trim().startsWith("<")) throw new Error("API 응답이 HTML입니다 권한 또는 API_BASE 확인 필요");
-      return JSON.parse(text);
-    } catch (err) {
-      metaEl.textContent = `불러오기 실패: ${err}`;
-      throw err;
-    }
+    const url = `${API_BASE}${qs}`;
+    const res = await fetch(url);
+    const text = await res.text();
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (text.trim().startsWith("<")) throw new Error("API 응답이 HTML입니다 권한 또는 API_BASE 확인 필요");
+    return JSON.parse(text);
   }
 
   function setMode(m) {
     mode = m;
     pickLabel.textContent = (mode === "class") ? "학급 선택" : "교사 선택";
     refreshListAndTable();
-  }
-
-  function getTodayKey() {
-    const map = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-    return map[new Date().getDay()];
   }
 
   async function refreshListAndTable() {
@@ -101,10 +88,7 @@
       : await api("?view=teachers");
 
     const items = (mode === "class") ? (list.classes || []) : (list.teachers || []);
-    if (!items.length) {
-      metaEl.textContent = "목록이 비어있음 시트 데이터 또는 API 확인 필요";
-      return;
-    }
+    if (!items.length) { metaEl.textContent = "목록이 비어있음"; return; }
 
     picker.innerHTML = items.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join("");
     const chosen = picker.value || items[0];
@@ -128,7 +112,7 @@
       const res = await api(`?view=${mode}&name=${encodeURIComponent(name)}`);
       const records = res.data || [];
 
-      // 같은 요일/교시 칸에 여러 건 누적
+      // key: day_period -> [{text,color,split}]
       const map = new Map();
       for (const r of records) {
         const key = `${r.day}_${r.period}`;
@@ -137,47 +121,28 @@
           ? `${r.subject}\n${r.teacher}`
           : `${r.subject}\n${r.class}`;
 
-        // 합반이면 글자 빨강
         const isMerged = String(r.subject || "").trim() === "합반";
         const color = isMerged ? "#d93025" : "#000000";
 
-        const cellObj = { text, color, className: String(r.class || "").trim() };
+        const cellObj = { text, color, split: !!r.split };
 
         if (!map.has(key)) map.set(key, []);
         map.get(key).push(cellObj);
       }
 
-      const today = getTodayKey();
-
       let html = "<table><thead><tr><th>교시</th>";
-      for (const d of days) {
-        const style = (d === today) ? ' style="background:#ffeeba"' : '';
-        html += `<th${style}>${dayLabel[d]}</th>`;
-      }
+      for (const d of days) html += `<th>${dayLabel[d]}</th>`;
       html += "</tr></thead><tbody>";
 
       for (const p of periods) {
         html += `<tr><th>${p}</th>`;
         for (const d of days) {
           const arr = map.get(`${d}_${p}`) || [];
-
-          // 배경 강조는 "한 칸에 여러 건"일 때
           const tdClass = (arr.length >= 2) ? "multi" : "";
 
-          // ✅ 분반 표시 조건
-          // - 학급용: 어차피 같은 학급 화면이므로 arr가 2개 이상이면 분반
-          // - 교사용: 같은 칸에 동일 학급이 2번 이상이면 분반
-          let isSplit = false;
-
-          if (mode === "class") {
-            isSplit = arr.length >= 2;
-          } else {
-            const classes = arr.map(x => x.className).filter(Boolean);
-            const uniq = new Set(classes);
-            isSplit = (classes.length >= 2) && (uniq.size < classes.length);
-          }
-
-          const splitTag = isSplit ? `<div class="split-tag">분반</div>` : "";
+          // ✅ 분반 판단: 이 칸 안에 split=true 항목이 하나라도 있으면 분반
+          const isSplitCell = arr.some(x => x.split);
+          const splitTag = isSplitCell ? `<div class="split-tag">분반</div>` : "";
 
           const cellHtml = splitTag + arr
             .map(obj => {
